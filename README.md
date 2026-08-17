@@ -8,6 +8,12 @@
 
 ![DeepResearch 前端](screenshots/frontend.png)
 
+### 实际运行效果
+
+输入问题后，系统自动完成意图分流、多智能体执行并输出最终报告。
+
+![DeepResearch 运行结果](screenshots/frontend-result.png)
+
 ### 后端 API 文档（Swagger UI）
 
 ![FastAPI 文档](screenshots/backend-docs.png)
