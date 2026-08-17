@@ -1,0 +1,21 @@
+# 根目录构建上下文（后端镜像）排除项
+**/__pycache__/
+**/*.pyc
+**/.DS_Store
+.env
+.env.docker
+.git
+.gitignore
+.idea/
+.vscode/
+node_modules
+**/node_modules/
+front/agent_front/dist/
+front/agent_front/.vite/
+output/
+_doc_extract/
+docs/
+app/data/
+*.log
+*.db-journal
+README-部署说明.md

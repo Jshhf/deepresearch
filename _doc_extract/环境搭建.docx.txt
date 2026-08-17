@@ -1,0 +1,50 @@
+环境搭建
+Docker镜像源配置
+如果是window环境的话，下载个docker客户端软件后操作
+部署Redis
+部署postgres
+部署Milvus
+🚀 启动方式
+创建部署目录
+mkdir -p ~/milvus-deploycd ~/milvus-deploy
+保存 docker-compose.yml 文件到当前目录（没有这个文件的话要先新建）。
+创建数据目录（确保有写入权限）
+mkdir -p etcd/data minio/data milvus/data milvus/logs
+启动所有服务
+docker compose up -d
+重启docker后启动服务
+部署Neo4j
+部署MySQL
+启动
+python版本 3.10/3.11
+1）.env 怎么配置
+在项目根目录：
+先复制模板：
+推荐先填这些最关键项：
+2）向量数据库导入：运行哪个脚本
+脚本是：
+app/mult_agents/rag/ingest.py
+要加载的文档路径写上去加载数据到向量数据库先
+3）后端服务怎么启动
+先安装依赖（首次）：
+启动后端：
+4）前端 npm install / npm run dev 怎么启动
+默认前端端口 5173，并且已经配置代理到后端 8000，所以后端启动后前端可直接联调。
+建议启动顺序
+先起 Milvus / Postgres
+再跑一次 ingest.py 入库
+再起后端 python app/app_main.py
+最后起前端 npm run dev
+sudo tee /etc/docker/daemon.json <<-'EOF' | { |     "registry-mirrors": [ |         "https://docker.m.daocloud.io", |         "https://noohub.ru", |         "https://huecker.io", |         "https://dockerhub.timeweb.cloud", |         "https://registry.docker-cn.com", |         "https://8xpk5wnt.mirror.aliyuncs.com", |         "https://hub-mirror.c.163.com", |         "https://docker.mirrors.ustc.edu.cn", |         "https://mirrors.tuna.tsinghua.edu.cn", |         "http://mirrors.sohu.com", |         "https://ustc-edu-cn.mirror.aliyuncs.com", |         "https://ccr.ccs.tencentyun.com", |         "https://docker.awsl9527.cn", |         "https://docker.xuanyuan.me" |     ] | } | EOF
+docker run -d --name redis \ |   -p 6379:6379 \ |   -e REDIS_USERNAME=root \ |   -e REDIS_PASSWORD=Yoxxxxxx \ |   bitnami/redis:latest
+docker run -d --name postgres \ |   -p 5432:5432 \ |   -e POSTGRES_USER=root \ |   -e POSTGRES_PASSWORD=Yxxxxxx \ |   -e POSTGRES_DB=mydb \ |   -v postgres-data:/var/lib/postgresql/data \ |   postgres:16
+version: '3.8' |  | services: |   etcd: |     container_name: milvus-etcd |     image: quay.io/coreos/etcd:v3.5.18 |     restart: unless-stopped |     environment: |       - ETCD_AUTO_COMPACTION_MODE=revision |       - ETCD_AUTO_COMPACTION_RETENTION=1000 |       - ETCD_QUOTA_BACKEND_BYTES=4294967296 |       - ETCD_SNAPSHOT_COUNT=50000 |     volumes: |       - ./etcd/data:/etcd |     command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd |     networks: |       - milvus-network |     healthcheck: |       test: ["CMD", "etcdctl", "endpoint", "health"] |       interval: 30s |       timeout: 20s |       retries: 3 |  |   minio: |     container_name: milvus-minio |     image: minio/minio:RELEASE.2023-03-20T20-16-18Z |     restart: unless-stopped |     environment: |       MINIO_ROOT_USER: minioadmin |       MINIO_ROOT_PASSWORD: minioadmin |     ports: |       - "9000:9000"   # API 端口 |       - "9001:9001"   # 控制台端口 |     volumes: |       - ./minio/data:/minio_data |     command: minio server /minio_data --console-address ":9001" |     networks: |       - milvus-network |     healthcheck: |       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"] |       interval: 30s |       timeout: 20s |       retries: 3 |  |   milvus-standalone: |     container_name: milvus-standalone |     image: milvusdb/milvus:v2.5.7 |     restart: unless-stopped |     command: ["milvus", "run", "standalone"] |     security_opt: |       - seccomp:unconfined |     environment: |       ETCD_ENDPOINTS: etcd:2379 |       MINIO_ADDRESS: minio:9000 |       MINIO_ACCESS_KEY_ID: minioadmin |       MINIO_SECRET_ACCESS_KEY: minioadmin |     volumes: |       - ./milvus/data:/var/lib/milvus/data |       - ./milvus/logs:/var/lib/milvus/logs |     ports: |       - "19530:19530"   # gRPC 端口 |       - "9091:9091"     # HTTP 健康检查端口 |     depends_on: |       etcd: |         condition: service_healthy |       minio: |         condition: service_healthy |     networks: |       - milvus-network |     healthcheck: |       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"] |       interval: 30s |       start_period: 90s |       timeout: 20s |       retries: 3 |  |   attu: |     container_name: attu |     image: zilliz/attu:v2.5.7 |     restart: unless-stopped |     environment: |       MILVUS_URL: milvus-standalone:19530 |     ports: |       - "8000:3000"   # Web 访问端口 |     depends_on: |       milvus-standalone: |         condition: service_healthy |     networks: |       - milvus-network |  | networks: |   milvus-network: |     driver: bridge |     name: milvus-network
+docker start redis postgres
+要重启你之前用 Docker Compose 部署的 Milvus 及相关服务（etcd、minio、milvus-standalone、attu），请按以下步骤操作： | 1️⃣ 进入部署目录 | 如果你当时是在某个目录下执行的 docker compose up -d，请先进入该目录： | cd ~/milvus-deploy   # 替换为实际目录 | 2️⃣ 查看当前状态 | docker compose ps | 如果服务状态显示 exited，说明已经停止。 | 3️⃣ 启动或重启所有服务 | docker compose restart
+Plain Text | docker run -d \  --name neo4j \  --restart always \  -p 7474:7474 \  -p 7687:7687 \  -e NEO4J_AUTH=neo4j/Yong7623822 \  -e NEO4J_PLUGINS='["apoc"]' \  -v $HOME/neo4j/data:/data \  -v $HOME/neo4j/logs:/logs \  neo4j:5.18.0
+Plain Text | docker run -d \ |   --name mysql8 \ |   -p 3306:3306 \ |   -e MYSQL_ROOT_PASSWORD=RootPass123! \ |   -e MYSQL_DATABASE=mydb \ |   -e MYSQL_USER=root \ |   -e MYSQL_PASSWORD=UserPass123! \ |   -v mysql_data:/var/lib/mysql \ |   --restart unless-stopped \ |   mysql:8.0
+Bash | cp .env.example .env
+Plain Text | DASHSCOPE_API_KEY=你的Key | MODEL=qwen-plus |  | # 多租户/会话 | TENANT_ID=default_tenant | USER_ID=default_user | THREAD_ID=default |  | # 记忆与检索 | ENABLE_MEMORY=true | ENABLE_MILVUS=true | MILVUS_HOST=127.0.0.1 | MILVUS_PORT=19530 | MILVUS_COLLECTION=mult_agent_memory |  | # 建议先用 postgres，redis 跳过不配置 | POSTGRES_DSN=postgresql://user:password@127.0.0.1:5432/postgres | REDIS_URL=redis://:password@127.0.0.1:6379 |  | # RediSearch 不稳定时建议 | CHECKPOINTER_BACKEND=postgres | SHORT_TERM_BACKEND=postgres | LONG_TERM_BACKEND=postgres
+Bash | cd /mult_agents_memory | pip install -r requirements.txt
+Bash | python app/app_main.py
+Bash | cd front/agent_front | npm install | npm run dev

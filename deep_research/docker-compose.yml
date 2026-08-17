@@ -1,0 +1,201 @@
+name: deepresearch
+
+# ============================================================================
+# DeepResearch 全栈部署：基础设施（PostgreSQL / Redis / Milvus 全家桶）+ 后端 + 前端
+#
+# 快速开始：
+#   1. 复制环境变量模板：  Copy-Item .env.docker.example .env.docker
+#   2. 编辑 .env.docker，填写 DASHSCOPE_API_KEY（必填）、BOCHA_API_KEY（可选）
+#   3. 启动：             docker compose --env-file .env.docker up -d --build
+#   4. 访问：             前端 http://localhost:8080 ，后端 http://localhost:8000
+#
+# 常用命令：
+#   查看状态   docker compose --env-file .env.docker ps
+#   查看日志   docker compose --env-file .env.docker logs -f backend
+#   停止       docker compose --env-file .env.docker down
+#   向量入库   docker compose --env-file .env.docker --profile ingest run --rm ingest
+#   只跑数据库 docker compose -f docker-compose.infrastructure.yml --env-file .env.docker up -d
+# ============================================================================
+
+services:
+  # --------------------------------------------------------------------------
+  # 基础设施
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:16
+    container_name: deepresearch-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-deepresearch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-deepresearch}
+      POSTGRES_DB: ${POSTGRES_DB:-deepresearch}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-deepresearch} -d ${POSTGRES_DB:-deepresearch}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  redis:
+    image: redis:7-alpine
+    container_name: deepresearch-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-deepresearch}", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-deepresearch}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.18
+    container_name: deepresearch-etcd
+    restart: unless-stopped
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - etcd-data:/etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    container_name: deepresearch-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"   # MinIO API
+      - "9001:9001"   # MinIO 控制台
+    volumes:
+      - minio-data:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  milvus-standalone:
+    image: milvusdb/milvus:v2.5.7
+    container_name: deepresearch-milvus
+    restart: unless-stopped
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - milvus-data:/var/lib/milvus/data
+      - milvus-logs:/var/lib/milvus/logs
+    ports:
+      - "19530:19530"   # gRPC
+      - "9091:9091"     # 健康检查 HTTP
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3
+
+  # Attu（Milvus 管理界面，可选；默认不随 up 启动，端口用 8001 避开后端 8000）
+  attu:
+    image: zilliz/attu:v2.5.7
+    container_name: deepresearch-attu
+    restart: unless-stopped
+    profiles: ["tools"]
+    environment:
+      MILVUS_URL: milvus-standalone:19530
+    ports:
+      - "8001:3000"
+    depends_on:
+      milvus-standalone:
+        condition: service_healthy
+
+  # --------------------------------------------------------------------------
+  # 应用
+  # --------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    container_name: deepresearch-backend
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./output:/workspace/output          # 工作区输出（报告等）
+      - ./app/data:/workspace/app/data      # SQLite 记忆库持久化
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      milvus-standalone:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: front/agent_front
+      dockerfile: Dockerfile
+    container_name: deepresearch-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+  # --------------------------------------------------------------------------
+  # 一次性任务：本地文档向量入库（不随 up 启动）
+  # 用法：docker compose --env-file .env.docker --profile ingest run --rm ingest
+  # 说明：把 .md/.txt 文档放进项目根目录 docs/ 后执行即可
+  # --------------------------------------------------------------------------
+  ingest:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    profiles: ["ingest"]
+    env_file:
+      - .env.docker
+    environment:
+      INGEST_INPUT_PATH: /workspace/docs
+    volumes:
+      - ./docs:/workspace/docs
+    depends_on:
+      milvus-standalone:
+        condition: service_healthy
+    command: ["python", "-m", "mult_agents.rag.ingest"]
+    restart: "no"
+
+volumes:
+  postgres-data:
+  redis-data:
+  etcd-data:
+  minio-data:
+  milvus-data:
+  milvus-logs:

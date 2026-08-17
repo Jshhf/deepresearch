@@ -1,0 +1,10 @@
+{"id": "q01", "query": "你好，介绍一下你自己", "expected_route": "direct"}
+{"id": "q02", "query": "今天天气怎么样", "expected_route": "direct"}
+{"id": "q03", "query": "1+1等于几", "expected_route": "direct"}
+{"id": "q04", "query": "什么是RAG", "expected_route": "direct"}
+{"id": "q05", "query": "调研2026年AI Agent开发框架的发展趋势", "expected_route": "multiagent", "expected_sub_questions": ["2026年主流AI Agent开发框架有哪些", "各框架的核心能力如何对比", "开发者选择框架时的主要考量因素"]}
+{"id": "q06", "query": "对比LangGraph和CrewAI的架构设计差异", "expected_route": "multiagent", "expected_sub_questions": ["LangGraph的核心架构特点", "CrewAI的核心架构特点", "两者的适用场景对比"]}
+{"id": "q07", "query": "盘点2025年大模型行业重大新闻", "expected_route": "multiagent", "expected_sub_questions": ["2025年有哪些重要模型发布", "行业融资与合作动态", "政策与监管变化"]}
+{"id": "q08", "query": "分析低空经济产业链的投资机会", "expected_route": "multiagent", "expected_sub_questions": ["低空经济产业链的上中下游构成", "主要参与企业和商业模式", "政策支持与市场空间"]}
+{"id": "q09", "query": "写一份AIGC行业深度研究报告", "expected_route": "multiagent", "expected_sub_questions": ["AIGC市场规模与增长趋势", "核心技术路线与竞争格局", "头部公司产品与商业化进展"]}
+{"id": "q10", "query": "调研DeepSeek最新模型的技术创新点", "expected_route": "multiagent", "expected_sub_questions": ["DeepSeek最新模型的技术架构", "训练方法与成本优化", "与同类模型的性能对比"]}
